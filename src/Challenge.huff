@@ -1,0 +1,208 @@
+/// @title Doves in the Wind
+/// @notice Whitenoise Challenge #1
+/// @author clabby <https://github.com/clabby>
+
+#include "huffmate/utils/Errors.huff"
+#include "huffmate/utils/JumpTableUtil.huff"
+#include "huffmate/utils/LibBit.huff"
+#include "huffmate/math/FixedPointMath.huff"
+#include "huffmate/math/Trigonometry.huff"
+
+#define function owner() view returns (address)
+#define function submit(address, uint256, uint256) nonpayable returns ()
+#define function solve(uint256) nonpayable returns (uint256)
+
+#define constant HIGH_SCORE_SLOT = FREE_STORAGE_POINTER()
+#define constant NFT_ADDR = 0x9a8362B327108730e61c9e72bEff6597cAFD0a88
+#define constant APPLE = 0xFFFF
+#define constant ORANGE = 0xFFFFFFFF00000000000000000000000000000000000000000000000000000000
+#define constant GRAPEFRUIT = 0xFFFFFFFFFFFFFFFF000000000000000000000000000000000000000000000000
+#define constant LEMON = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+
+#define jumptable__packed DISPATCH = {
+    dispatch_0 dispatch_1 dispatch_2 dispatch_3 dispatch_4
+}
+
+#define macro CONSTRUCTOR() = {
+    // Set the high score slot to max int at first
+    pc not [HIGH_SCORE_SLOT] sstore
+}
+
+#define macro MAIN() = {
+    caller extcodesize iszero
+    ASSERT()
+
+    0x04 calldataload
+    __tablestart(DISPATCH)
+    0x00 calldataload 0xE0 shr
+    0x05 dup2 lt ASSERT()
+    RETRIEVE_FROM_PACKED_JT()
+    jump
+
+    dispatch_0:
+        DISPATCH_0()
+    dispatch_1:
+        DISPATCH_1()
+    dispatch_2:
+        DISPATCH_2()
+    dispatch_3:
+        DISPATCH_3()
+    dispatch_4:
+        DISPATCH_4()
+
+    magic_dest:
+        [LEMON] and
+        SOLVE()
+
+    fail:
+        PANIC()
+}
+
+/// @dev Solve entrypoint
+#define macro SOLVE() = takes (1) {
+    // Input stack:               [solution_addr]
+
+    // "Solution must be a contract"
+    __RIGHTPAD(0x536f6c7574696f6e206d757374206265206120636f6e7472616374)
+    0x1B                       // [0x1b, "Solution must be a contract", solution_addr]
+    dup3 extcodesize           // [codesize(solution), 0x1b, "Solution must be a contract", solution_addr]
+    iszero iszero              // [codesize(solution) != 0, 0x1b, "Solution must be a contract", solution_addr]
+    REQUIRE()                  // [solution_addr]
+
+    // "Solution is not yours"
+    __RIGHTPAD(0x536f6c7574696f6e206973206e6f7420796f757273)
+    0x15                       // [0x15, "Solution is not yours", solution_addr]
+    dup3                       // [solution_addr, 0x15, "Solution is not yours", solution_addr]
+    GET_OWNER() caller eq      // [solution_owner == msg.sender, 0x15, "Solution is not yours", solution_addr]
+    REQUIRE()                  // [solution_addr]
+
+    // Store "solve" function selector in memory @ 0x00
+    __FUNC_SIG(solve) 0x00 mstore
+
+    GEN_SEED() dup1            // [challenge_input, challenge_input, solution_addr]
+    0x20 mstore                // [challenge_input, solution_addr]
+    swap1                      // [solution_addr, challenge_input]
+
+    dup1 extcodesize           // [codesize(solution), solution_addr, challenge_input]
+    swap1                      // [solution_addr, codesize(solution), challenge_input]
+    gas                        // [gasBefore, solution_addr, codesize(solution), challenge_input]
+    swap1                      // [solution_addr, gasBefore, codesize(solution), challenge_input]
+
+    // Perform call to solution contract with the generated input
+    0x00 0x24 0x1c 0x00        // [0x00, 0x1c, 0x24, 0x00, solution_addr, gasBefore, codesize(solution), challenge_input]
+    0x20 swap5                 // [solution_addr, 0x00, 0x1c, 0x24, 0x00, 0x20, gasBefore, codesize(solution), challenge_input]
+    gas call                   // [success, gasBefore, codesize(solution), challenge_input]
+
+    // Ensure call to solution contract succeeded
+    ASSERT()                   // [gasBefore, codesize(solution), challenge_input]
+
+    gas swap1 sub              // [gasUsed, codesize(solution), challenge_input]
+
+    // Assert that solution is valid
+    0x20 0x00 dup1             // [0x00, 0x00, 0x20, gasUsed, codesize(solution), challenge_input]
+    returndatacopy             // [gasUsed, codesize(solution), challenge_input]
+    0x00 mload                 // [solution, gasUsed, codesize(solution), challenge_input]
+    dup4                       // [challenge_input, solution, gasUsed, codesize(solution), challenge_input]
+    VALIDATE_SOLUTION()        // [gasUsed, codesize(solution), challenge_input]
+
+    // Assert that the new score is less than the old score
+    [HIGH_SCORE_SLOT] sload    // [prevScore, gasUsed, codesize(solution), challenge_input]
+    dup3 dup3 add lt           // [newScore < prevScore, gasUsed, codesize(solution), challenge_input]
+    ASSERT()                   // [gasUsed, codesize(solution), challenge_input]
+
+    // Submit to NFT contract
+    caller                     // [sender, gasUsed, codesize(solution), challenge_input]
+    SUBMIT()                   // [newScore, challenge_input]
+
+    // Update highest (erm, lowest, ykwim) score and hault
+    [HIGH_SCORE_SLOT] sstore   // [challenge_input]
+    stop
+}
+
+#define macro SUBMIT() = takes (3) {
+    __FUNC_SIG(submit)
+    0xE0 shl                   
+    0x00 mstore              
+    0x04 mstore                
+    dup2 dup2 add         
+    swap2                     
+    0x44 mstore         
+    0x24 mstore              
+    0x00 dup1 0x64 dup2 dup1  
+    [NFT_ADDR]            
+    gas call                  
+    ASSERT()             
+}
+
+#define macro GET_OWNER() = takes (1) returns (1) {
+    __FUNC_SIG(owner) 0x00 mstore
+    0x00 0x04 0x1c 0x20 swap4 
+    gas staticcall           
+    ASSERT()                  
+    0x00 mload                
+}
+
+#define macro GEN_SEED() = returns (1) {
+    number 0x20 mstore       
+    dup1 blockhash 0x40 mstore 
+    caller 0x60 mstore         
+    0x60 0x20 sha3         
+}
+
+#define macro VALIDATE_SOLUTION() = takes (2) {
+    // [ redacted, can find in the runtime code :) ]
+}
+
+#define macro DISPATCH_0() = takes (1) {
+    0xa57b3d3e               
+    0x957f47157a        
+    MUL_DIV_DOWN(fail)        
+    0x00 mstore           
+    0x20 0x00 return
+}
+
+#define macro DISPATCH_1() = takes (1) {
+    0x01 0x08 shl            
+    returndatasize add       
+    chainid and              
+    dispatch_1 jump   
+    stop
+}
+
+#define macro DISPATCH_2() = takes (1) {
+    SIN()                 
+    stop
+    SQRT()
+}
+
+#define macro DISPATCH_3() = takes (1) {
+    0x00 calldataload          
+    [ORANGE] and    
+    0x00 mstore                
+    caller 0x60 shl            
+    0x04 mstore               
+    0x04 calldataload         
+    [GRAPEFRUIT] and   
+    0x18 mstore              
+    0x20 0x00 sha3            
+    dup1                      
+    [APPLE] and       
+    0xD073 eq               
+    ASSERT()                   
+    0xF0 shr               
+    dup1 0x03de gt            
+    ASSERT()                 
+    jump                   
+}
+
+#define macro DISPATCH_4() = takes (1) {
+    POP_COUNT()
+    0x600480600E6000396000F3306000F3
+    0x00 mstore              
+    0x0f                       
+    0x00                     
+    0x00                        
+    create
+    0x00 mstore
+    0x20 0x00 return
+}
