@@ -1,0 +1,6 @@
+#define macro MAIN() = takes(0) returns(0) {
+  0x04 calldataload          // [full_sig]
+  0xe0 shr                   // [sig]
+
+  0x00 0x00 revert
+}

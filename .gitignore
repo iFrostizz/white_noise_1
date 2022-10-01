@@ -20,3 +20,6 @@ flattened.txt
 
 # Ignore Broadcasts
 broadcast
+
+# huff's temp
+src/__TEMP__*
